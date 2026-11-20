@@ -16,6 +16,7 @@
     completedAt: null,
     attempts: 0,
     hintsOpened: {}, // { [roomIndex]: count }
+    victoryNotified: false,
     activeWidget: null,
     isChecking: false,
     resetConfirmPending: false,
@@ -56,10 +57,39 @@
         completedAt: state.completedAt,
         attempts: state.attempts,
         hintsOpened: state.hintsOpened,
+        victoryNotified: state.victoryNotified,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (_e) {
       // Ignore storage quota errors
+    }
+  }
+
+  function notifyDiscordVictory(victoryRoom) {
+    if (state.victoryNotified) return;
+    const webhookUrl = victoryRoom && typeof victoryRoom.notifyWebhook === 'string'
+      ? victoryRoom.notifyWebhook.trim()
+      : '';
+    if (!webhookUrl) return;
+
+    state.victoryNotified = true;
+    persistSave();
+
+    const elapsed = formatDuration((state.completedAt || Date.now()) - state.startTime);
+    const dungeonName = (dom.title && dom.title.textContent) || "Baldur's Cake";
+    const payload = {
+      content: `🎂 **${dungeonName}** has been escaped!\n⏱️ Time: **${elapsed}** · 🗝️ Seal Attempts: **${state.attempts}**`,
+    };
+
+    try {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    } catch (_e) {
+      // Ignore network or CSP errors silently
     }
   }
 
@@ -373,6 +403,7 @@
           persistSave();
 
           if (decrypted.isVictory) {
+            notifyDiscordVictory(decrypted);
             global.DungeonAudio.playVictoryFanfare();
           } else {
             global.DungeonAudio.playUnlockChord();
@@ -425,6 +456,7 @@
     state.completedAt = null;
     state.attempts = 0;
     state.hintsOpened = {};
+    state.victoryNotified = false;
     state.resetConfirmPending = false;
     dom.resetBtn.textContent = 'Reset Run';
     dom.resetBtn.classList.remove('is-confirming');
@@ -577,6 +609,7 @@
       state.completedAt = save.completedAt || null;
       state.attempts = save.attempts || 0;
       state.hintsOpened = save.hintsOpened || {};
+      state.victoryNotified = Boolean(save.victoryNotified);
 
       const savedKeys = save.keys || {};
       let highestValid = 0;
