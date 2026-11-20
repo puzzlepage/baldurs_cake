@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dungeon Forge — Encrypt Rooms for GitHub Pages</title>
+  <style>
+    :root {
+      --bg: #0b0e13;
+      --panel: #141922;
+      --border: #2c3545;
+      --text: #e7dfd1;
+      --muted: #98a2b3;
+      --amber: #e89b3c;
+      --ok: #5bc489;
+      --err: #d95d5d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px 20px 60px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Georgia, serif;
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 6px;
+      color: #ffd07b;
+      letter-spacing: 0.04em;
+    }
+    p.lead {
+      margin: 0 0 22px;
+      color: var(--muted);
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 18px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    button, .file-label {
+      background: #232a37;
+      color: var(--text);
+      border: 1px solid #3f4a5d;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font-size: 0.92rem;
+      cursor: pointer;
+    }
+    button:hover, .file-label:hover {
+      border-color: var(--amber);
+    }
+    button.primary {
+      background: linear-gradient(180deg, #b97527, #834d15);
+      border-color: #f0b25d;
+      color: #fff6e6;
+      font-weight: 700;
+    }
+    input[type="file"] { display: none; }
+    textarea {
+      width: 100%;
+      min-height: 360px;
+      background: #0a0c10;
+      color: #d7e4f5;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.45;
+      resize: vertical;
+    }
+    .status {
+      margin-top: 10px;
+      font-family: Consolas, monospace;
+      font-size: 0.9rem;
+    }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    .status.info { color: #ffd07b; }
+    code {
+      background: #0a0c10;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: Consolas, monospace;
+      font-size: 0.88em;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>⚒️ Blackhollow Dungeon Forge</h1>
+    <p class="lead">
+      Author any number of rooms locally (5, 8, 12…), then encrypt them sequentially with PBKDF2 + AES-256-GCM
+      into <code>data/rooms.js</code>. Never commit <code>authoring/rooms.secret.json</code> to a public repo!
+    </p>
+
+    <div class="card">
+      <div class="toolbar">
+        <label class="file-label">
+          📂 Load JSON File
+          <input id="file-input" type="file" accept=".json" />
+        </label>
+        <button id="btn-add-room" type="button">+ Append Sample Chamber (Before Victory)</button>
+        <button id="btn-download-secret" type="button">💾 Save rooms.secret.json</button>
+        <button id="btn-encrypt" type="button" class="primary">🔐 Encrypt &amp; Verify Chain</button>
+      </div>
+      <textarea id="json-editor" spellcheck="false" placeholder="Paste or load authoring/rooms.secret.json here..."></textarea>
+      <div id="forge-status" class="status info">Load authoring/rooms.secret.json to begin.</div>
+    </div>
+
+    <div class="card" id="output-card" hidden>
+      <div class="toolbar">
+        <strong>Generated <code>data/rooms.js</code></strong>
+        <button id="btn-download-js" type="button" class="primary">⬇️ Download data/rooms.js</button>
+        <button id="btn-copy-js" type="button">📋 Copy Output</button>
+      </div>
+      <textarea id="js-output" readonly spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <script src="../js/crypto.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      const fileInput = document.getElementById('file-input');
+      const editor = document.getElementById('json-editor');
+      const statusEl = document.getElementById('forge-status');
+      const outputCard = document.getElementById('output-card');
+      const jsOutput = document.getElementById('js-output');
+
+      const btnAddRoom = document.getElementById('btn-add-room');
+      const btnDownloadSecret = document.getElementById('btn-download-secret');
+      const btnEncrypt = document.getElementById('btn-encrypt');
+      const btnDownloadJs = document.getElementById('btn-download-js');
+      const btnCopyJs = document.getElementById('btn-copy-js');
+
+      function setStatus(msg, cls) {
+        statusEl.textContent = msg;
+        statusEl.className = 'status ' + (cls || 'info');
+      }
+
+      function toRoman(num) {
+        const map = [
+          [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+          [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+          [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+        ];
+        let res = '';
+        let n = num;
+        for (const [val, sym] of map) {
+          while (n >= val) { res += sym; n -= val; }
+        }
+        return res;
+      }
+
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        editor.value = text;
+        setStatus(`Loaded ${file.name}. Ready to edit or encrypt.`, 'ok');
+      });
+
+      btnAddRoom.addEventListener('click', () => {
+        try {
+          const data = JSON.parse(editor.value);
+          if (!Array.isArray(data.rooms)) throw new Error('rooms must be an array');
+          const victoryIdx = data.rooms.findIndex((r) => r.isVictory);
+          const insertIdx = victoryIdx >= 0 ? victoryIdx : data.rooms.length;
+          const num = insertIdx + 1;
+          const sample = {
+            id: `chamber-${num}`,
+            roman: toRoman(num),
+            title: `Chamber ${toRoman(num)}: The Hidden Mechanism`,
+            subtitle: 'A newly forged vault',
+            lore: ['Describe the atmosphere and clues discovered in this chamber.'],
+            actionLabel: 'Test the Seal',
+            failMessage: 'The ancient lock does not budge.',
+            puzzle: {
+              type: 'text-seal',
+              inscriptionTitle: 'Carved Inscription',
+              inscription: 'Replace this riddle with your own puzzle clues.',
+              prompt: 'Enter the Passphrase:',
+              inputPlaceholder: 'Answer...'
+            },
+            hints: ['First hint.', 'Second hint.'],
+            solution: 'OPEN'
+          };
+          data.rooms.splice(insertIdx, 0, sample);
+          editor.value = JSON.stringify(data, null, 2);
+          setStatus(`Inserted Chamber ${toRoman(num)} before Victory.`, 'ok');
+        } catch (err) {
+          setStatus('Invalid JSON in editor: ' + err.message, 'err');
+        }
+      });
+
+      function triggerDownload(filename, content, mime) {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      btnDownloadSecret.addEventListener('click', () => {
+        triggerDownload('rooms.secret.json', editor.value, 'application/json');
+      });
+
+      btnEncrypt.addEventListener('click', async () => {
+        try {
+          const source = JSON.parse(editor.value);
+          if (!source || !Array.isArray(source.rooms) || source.rooms.length < 2) {
+            throw new Error('Provide at least 1 puzzle chamber and 1 victory chamber.');
+          }
+
+          setStatus('Deriving keys and encrypting chambers...', 'info');
+          const outRooms = [];
+
+          // Room 0 is public entry (strip solution!)
+          const firstCopy = JSON.parse(JSON.stringify(source.rooms[0]));
+          const firstSolution = firstCopy.solution;
+          if (!firstSolution) throw new Error('Room 1 is missing a "solution" field.');
+          delete firstCopy.solution;
+          outRooms.push(firstCopy);
+
+          let prevSolution = firstSolution;
+          for (let i = 1; i < source.rooms.length; i++) {
+            const roomCopy = JSON.parse(JSON.stringify(source.rooms[i]));
+            const nextSolution = roomCopy.solution;
+            const isLast = i === source.rooms.length - 1;
+            if (!isLast && !nextSolution) {
+              throw new Error(`Room ${i + 1} (${roomCopy.id}) is missing a "solution" field.`);
+            }
+            delete roomCopy.solution;
+
+            const encrypted = await window.DungeonCrypto.encryptPayload(roomCopy, prevSolution);
+            // Round-trip sanity check
+            const verified = await window.DungeonCrypto.decryptPayload(encrypted, prevSolution);
+            if (!verified || verified.id !== roomCopy.id) {
+              throw new Error(`Verification failed for room ${i + 1}`);
+            }
+
+            outRooms.push({
+              id: roomCopy.id,
+              roman: roomCopy.roman || String(i + 1),
+              salt: encrypted.salt,
+              iv: encrypted.iv,
+              ciphertext: encrypted.ciphertext,
+            });
+
+            prevSolution = nextSolution;
+          }
+
+          const bundle = {
+            meta: source.meta || { title: 'Blackhollow Keep', subtitle: '' },
+            rooms: outRooms,
+          };
+
+          const jsString =
+            '// Auto-generated by tools/forge.html — Encrypted with PBKDF2-SHA256 + AES-256-GCM\n' +
+            'window.DUNGEON_ROOMS = ' +
+            JSON.stringify(bundle, null, 2) +
+            ';\n';
+
+          jsOutput.value = jsString;
+          outputCard.hidden = false;
+          setStatus(
+            `Success! Encrypted ${outRooms.length - 1} locked stages and verified every decryption key.`,
+            'ok'
+          );
+        } catch (err) {
+          setStatus('Encryption failed: ' + err.message, 'err');
+        }
+      });
+
+      btnDownloadJs.addEventListener('click', () => {
+        triggerDownload('rooms.js', jsOutput.value, 'application/javascript');
+      });
+
+      btnCopyJs.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(jsOutput.value);
+          setStatus('Copied data/rooms.js content to clipboard.', 'ok');
+        } catch (_e) {
+          jsOutput.select();
+          document.execCommand('copy');
+          setStatus('Copied data/rooms.js content to clipboard.', 'ok');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

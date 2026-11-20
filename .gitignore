@@ -1,0 +1,9 @@
+# Keep plaintext solutions, design notes, and handover docs out of public GitHub repositories!
+authoring/rooms.secret.json
+HANDOVER.md
+PUZZLE_INSPIRATION.md
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini

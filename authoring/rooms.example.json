@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "title": "Blackhollow Keep",
+    "subtitle": "Break each arcane seal to ascend from the sunken vaults."
+  },
+  "rooms": [
+    {
+      "id": "chamber-1",
+      "roman": "I",
+      "title": "Example Starting Cell",
+      "subtitle": "A sample chamber showing the schema",
+      "story": {
+        "title": "Chronicle I: The Awakening",
+        "paragraphs": [
+          "The dedicated story preface for this chamber, always accessible from the Story Chronicle.",
+          "May contain subtle details or clues needed here or in later chambers."
+        ]
+      },
+      "lore": [
+        "Environmental description of the room and puzzle mechanism."
+      ],
+      "actionLabel": "Test the Seal",
+      "failMessage": "The seal holds fast.",
+      "puzzle": {
+        "type": "text-seal",
+        "inscriptionTitle": "Carved Stone",
+        "inscription": "Speak the example word: TORCH",
+        "prompt": "Passphrase:",
+        "inputPlaceholder": "Enter word..."
+      },
+      "hints": [
+        "First progressive hint.",
+        "Second deeper hint."
+      ],
+      "solution": "TORCH"
+    },
+    {
+      "id": "victory",
+      "roman": "✦",
+      "isVictory": true,
+      "title": "Freedom",
+      "lore": [
+        "You escaped the example dungeon!"
+      ]
+    }
+  ]
+}
